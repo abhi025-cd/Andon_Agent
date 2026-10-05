@@ -1,0 +1,18 @@
+id: stuck_sensor
+description: Humidity sensor repeats exactly 55.0. This is a false reading, not a real fault.
+station: ST-020
+duration_min: 45
+
+inject:
+  - at_min: 15
+    type: signal
+    signal: humidity_pct
+    pattern: stuck_at
+    value: 55.0
+    until_min: 40
+
+ground_truth:
+  should_raise_incident: false
+  root_cause: sensor_stuck_false_reading
+  affected_station: ST-020
+  affected_window_min: null
