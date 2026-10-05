@@ -74,3 +74,17 @@ INSERT INTO stations (station_id, line_id, process_type) VALUES
     ('ST-040', 'LINE-1', 'bolting'),
     ('ST-050', 'LINE-1', 'end_of_line_test')
 ON CONFLICT DO NOTHING;
+
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS station_id  TEXT;
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS signal      TEXT;
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS detected_at TIMESTAMPTZ;
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS evidence    JSONB;
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS diagnosis   JSONB;
+-- idempotency: at most one open incident per station + signal
+CREATE UNIQUE INDEX IF NOT EXISTS uq_open_incident
+    ON incidents (station_id, signal) WHERE status = 'open';
+
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS containment JSONB;
+
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS report TEXT;
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS report_review JSONB;

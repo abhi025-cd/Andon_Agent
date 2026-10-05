@@ -1,0 +1,224 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "commit": "04a5760",
+  "summary": {
+    "runs": 2,
+    "detection_rate": 0.0,
+    "mean_ttd_sim_min": null,
+    "root_cause_accuracy": 0.0,
+    "containment_precision": 0.0,
+    "containment_recall": 0.0,
+    "containment_f1": 0.0,
+    "false_alarm_scenario_rate": 0.0,
+    "false_alarm_checkpoints": 0,
+    "total_checkpoints": 11,
+    "parse_failures": 1,
+    "errors": 3,
+    "avg_tokens_per_checkpoint": 5529.0,
+    "avg_latency_s": 36.445,
+    "avg_tool_calls": 3.455
+  },
+  "results": [
+    {
+      "scenario": "stuck_sensor",
+      "should_raise_incident": false,
+      "checkpoints": [
+        {
+          "minute": 20,
+          "answer": {
+            "incident": false,
+            "station_id": null,
+            "root_cause": "no_fault",
+            "affected_window": null
+          },
+          "tools": [
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool"
+          ],
+          "tokens": 8100,
+          "latency_s": 5.3,
+          "error": null
+        },
+        {
+          "minute": 25,
+          "answer": {
+            "incident": false,
+            "station_id": null,
+            "root_cause": "no_fault",
+            "affected_window": null
+          },
+          "tools": [
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool"
+          ],
+          "tokens": 7952,
+          "latency_s": 44.3,
+          "error": null
+        },
+        {
+          "minute": 30,
+          "answer": {
+            "incident": false,
+            "station_id": null,
+            "root_cause": "no_fault",
+            "affected_window": null
+          },
+          "tools": [
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool"
+          ],
+          "tokens": 6361,
+          "latency_s": 33.0,
+          "error": null
+        },
+        {
+          "minute": 35,
+          "answer": {
+            "incident": false,
+            "station_id": null,
+            "root_cause": "no_fault",
+            "affected_window": null
+          },
+          "tools": [
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool"
+          ],
+          "tokens": 6409,
+          "latency_s": 40.5,
+          "error": null
+        },
+        {
+          "minute": 40,
+          "answer": {
+            "incident": false,
+            "station_id": null,
+            "root_cause": "no_fault",
+            "affected_window": null
+          },
+          "tools": [
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool"
+          ],
+          "tokens": 8015,
+          "latency_s": 47.4,
+          "error": null
+        }
+      ],
+      "n_checkpoints": 5,
+      "detected": false,
+      "detected_at_min": null,
+      "ttd_min": null,
+      "false_alarm_checkpoints": 0,
+      "root_cause_correct": null,
+      "precision": null,
+      "recall": null,
+      "f1": null,
+      "run": 1
+    },
+    {
+      "scenario": "torque_drift",
+      "should_raise_incident": true,
+      "checkpoints": [
+        {
+          "minute": 20,
+          "answer": {
+            "incident": false,
+            "station_id": null,
+            "root_cause": "no_fault",
+            "affected_window": null
+          },
+          "tools": [
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool"
+          ],
+          "tokens": 7969,
+          "latency_s": 38.1,
+          "error": null
+        },
+        {
+          "minute": 22,
+          "answer": {
+            "incident": false,
+            "station_id": null,
+            "root_cause": "no_fault",
+            "affected_window": null
+          },
+          "tools": [
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool"
+          ],
+          "tokens": 7916,
+          "latency_s": 20.1,
+          "error": null
+        },
+        {
+          "minute": 24,
+          "answer": null,
+          "tools": [],
+          "tokens": 0,
+          "latency_s": 50.9,
+          "error": "BadRequestError: Error code: 400 - {'error': {'message': \"'messages.15' : for 'role:tool' the following must be satisfied[('messages.15.content' : one of the following must be satisfied[('messages.15.content' : value must be a string) OR ('messages.15.content' : minimum number of items is 1)])]\", 't"
+        },
+        {
+          "minute": 26,
+          "answer": null,
+          "tools": [],
+          "tokens": 0,
+          "latency_s": 42.6,
+          "error": "BadRequestError: Error code: 400 - {'error': {'message': \"'messages.15' : for 'role:tool' the following must be satisfied[('messages.15.content' : one of the following must be satisfied[('messages.15.content' : value must be a string) OR ('messages.15.content' : minimum number of items is 1)])]\", 't"
+        },
+        {
+          "minute": 28,
+          "answer": null,
+          "tools": [],
+          "tokens": 0,
+          "latency_s": 39.5,
+          "error": "BadRequestError: Error code: 400 - {'error': {'message': \"'messages.15' : for 'role:tool' the following must be satisfied[('messages.15.content' : one of the following must be satisfied[('messages.15.content' : value must be a string) OR ('messages.15.content' : minimum number of items is 1)])]\", 't"
+        },
+        {
+          "minute": 30,
+          "answer": null,
+          "tools": [
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool",
+            "check_spc_tool",
+            "query_tool_changes_tool"
+          ],
+          "tokens": 8097,
+          "latency_s": 39.2,
+          "error": null
+        }
+      ],
+      "n_checkpoints": 6,
+      "detected": false,
+      "detected_at_min": null,
+      "ttd_min": null,
+      "false_alarm_checkpoints": 0,
+      "root_cause_correct": false,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "run": 1
+    }
+  ]
+}
