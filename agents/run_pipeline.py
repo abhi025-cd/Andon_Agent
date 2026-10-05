@@ -1,4 +1,4 @@
-"""Monitor -> Diagnosis at a given simulated time.
+"""Monitor -> Diagnosis -> Traceability -> Reporting at a given simulated time.
     uv run python agents/run_pipeline.py --as-of 2026-10-04T10:26:00Z
 """
 import argparse
@@ -9,7 +9,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agents.diagnosis import diagnose  # noqa: E402
 from agents.monitor import scan  # noqa: E402
+from agents.reporting import write_report  # noqa: E402
 from agents.tools import _connect  # noqa: E402
+from agents.traceability import propose_containment  # noqa: E402
 
 
 def undiagnosed() -> list[int]:
@@ -37,13 +39,26 @@ def main() -> None:
 
     for iid in undiagnosed():
         print(f"\nDiagnosing incident {iid} ...")
-        r = diagnose(iid)
+        try:
+            r = diagnose(iid)
+        except Exception as exc:
+            print(f"  DIAGNOSIS FAILED: {type(exc).__name__}: {str(exc)[:600]}")
+            print("  Incident stays open. Needs human review.")
+            continue
         print("tools used:", r["tools_used"], "| retries:", r["retries"])
-        if r["diagnosis"]:
-            for k, v in r["diagnosis"].items():
-                print(f"  {k}: {v}")
-        else:
+        if not r["diagnosis"]:
             print("  PARSE_FAIL. Raw:", r["raw"].replace("\n", " | "))
+            continue
+        for k, v in r["diagnosis"].items():
+            print(f"  {k}: {v}")
+
+        p = propose_containment(iid)
+        print(f"\nContainment PROPOSAL (needs human approval): hold {p['n_vins']} VINs "
+              f"at {p['station_id']} ({p['n_nok']} already NOK), window from {p['window_basis']}")
+
+        rep = write_report(iid)
+        print(f"8D report saved: {rep['path']} | self-review: {rep['review']['verdict']} "
+              f"({len(rep['review']['issues'])} issues, revised={rep['draft_changed']})")
 
 
 if __name__ == "__main__":
