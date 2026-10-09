@@ -1,4 +1,4 @@
-"""Step 4: scenario injection.
+"""Machine-level simulator: every machine at a station measures every vehicle.
 Timestamps come from a simulated clock, never datetime.now()."""
 import argparse
 import json
@@ -14,19 +14,30 @@ BROKER_HOST = "localhost"
 BROKER_PORT = 1883
 SCENARIO_DIR = Path(__file__).resolve().parent.parent / "scenarios"
 
+PLANT_ID = "PLANT-01"
+LINE_ID = "LINE-01"
 SIM_START = datetime(2026, 10, 4, 10, 0, 0, tzinfo=timezone.utc)
-VEHICLE_INTERVAL_S = 60
-STATION_TRAVEL_S = 300
+VEHICLE_INTERVAL_S = 60       # a new VIN enters the line every 60 s
+STATION_TRAVEL_S = 300        # 5 min between stations
 
-STATIONS = {
-    "ST-010": {"signals": {"weld_current_kA": {"mean": 9.5, "std": 0.4}}},
-    "ST-020": {"signals": {"booth_temp_C": {"mean": 24.0, "std": 1.0},
-                           "humidity_pct": {"mean": 55.0, "std": 5.0}}},
-    "ST-030": {"signals": {"cycle_time_s": {"mean": 52.0, "std": 3.0}}},
-    "ST-040": {"signals": {"torque_nm": {"mean": 45.0, "std": 1.5}}},
-    "ST-050": {"signals": {}},
-}
 STATION_ORDER = ["ST-010", "ST-020", "ST-030", "ST-040", "ST-050"]
+
+MACHINES = {
+    "M-0101": {"station": "ST-010", "signals": {"weld_current_kA": {"mean": 9.5, "std": 0.4}}},
+    "M-0102": {"station": "ST-010", "signals": {"weld_current_kA": {"mean": 9.5, "std": 0.4}}},
+    "M-0201": {"station": "ST-020", "signals": {"humidity_pct": {"mean": 55.0, "std": 5.0}}},
+    "M-0202": {"station": "ST-020", "signals": {"booth_temp_C": {"mean": 24.0, "std": 1.0}}},
+    "M-0301": {"station": "ST-030", "signals": {"cycle_time_s": {"mean": 52.0, "std": 3.0}}},
+    "M-0302": {"station": "ST-030", "signals": {"cycle_time_s": {"mean": 52.0, "std": 3.0}}},
+    "M-0401": {"station": "ST-040", "signals": {"torque_nm": {"mean": 45.0, "std": 1.5}}},
+    "M-0402": {"station": "ST-040", "signals": {"torque_nm": {"mean": 45.0, "std": 1.5}}},
+    "M-0403": {"station": "ST-040", "signals": {"torque_nm": {"mean": 45.0, "std": 1.5}}},
+    "M-0404": {"station": "ST-040", "signals": {"torque_nm": {"mean": 45.0, "std": 1.5}}},
+    "M-0501": {"station": "ST-050", "signals": {}},
+    "M-0502": {"station": "ST-050", "signals": {}},
+}
+STATION_MACHINES = {s: [m for m, c in MACHINES.items() if c["station"] == s]
+                    for s in STATION_ORDER}
 
 
 def fmt(ts: datetime) -> str:
@@ -49,18 +60,18 @@ def load_scenario(name: str | None) -> dict | None:
         return yaml.safe_load(f)
 
 
-def read_station(station_id: str, ts: datetime, scenario: dict | None):
-    """Return (measured, result). Scenario signal injections change the mean
-    (drift) or freeze the value (stuck). NOK is judged against the NOMINAL mean."""
+def read_machine(machine_id: str, ts: datetime, scenario: dict | None):
+    """Return (measured, result). Scenario injections only affect the named machine.
+    NOK is judged against the NOMINAL mean, like a real machine with fixed limits."""
     t_min = (ts - SIM_START).total_seconds() / 60
     measured, result = {}, "OK"
 
-    for name, p in STATIONS[station_id]["signals"].items():
+    for name, p in MACHINES[machine_id]["signals"].items():
         mean, stuck = p["mean"], None
         if scenario:
             for inj in scenario["inject"]:
                 if (inj["type"] != "signal"
-                        or inj.get("station", scenario["station"]) != station_id
+                        or inj.get("machine", scenario["machine"]) != machine_id
                         or inj["signal"] != name
                         or not inj["at_min"] <= t_min <= inj["until_min"]):
                     continue
@@ -78,9 +89,13 @@ def read_station(station_id: str, ts: datetime, scenario: dict | None):
         if stuck is None and abs(value - p["mean"]) > 3 * p["std"]:
             result = "NOK"
 
-    if station_id == "ST-050":
+    if MACHINES[machine_id]["station"] == "ST-050":
         measured["leak_test_pass"] = True
     return measured, result
+
+
+def topic_for(machine_id: str, kind: str) -> str:
+    return f"plant/line1/{MACHINES[machine_id]['station']}/{machine_id}/{kind}"
 
 
 def build_messages(num_vehicles: int, scenario: dict | None):
@@ -88,23 +103,26 @@ def build_messages(num_vehicles: int, scenario: dict | None):
     for n in range(1, num_vehicles + 1):
         for i, station_id in enumerate(STATION_ORDER):
             ts = sim_time(n, i)
-            measured, result = read_station(station_id, ts, scenario)
-            payload = {"vin": make_vin(n), "station_id": station_id, "ts": fmt(ts),
-                       "measured": measured, "result": result}
-            messages.append((ts, f"plant/line1/{station_id}/pass", payload))
+            for machine_id in STATION_MACHINES[station_id]:
+                measured, result = read_machine(machine_id, ts, scenario)
+                payload = {"plant_id": PLANT_ID, "line_id": LINE_ID, "vin": make_vin(n),
+                           "station_id": station_id, "machine_id": machine_id,
+                           "ts": fmt(ts), "measured": measured, "result": result}
+                messages.append((ts, topic_for(machine_id, "pass"), payload))
 
     if scenario:
         for inj in scenario["inject"]:
-            station = inj.get("station", scenario["station"])
+            machine_id = inj.get("machine", scenario["machine"])
+            station_id = MACHINES[machine_id]["station"]
             ts = SIM_START + timedelta(minutes=inj["at_min"])
+            base = {"plant_id": PLANT_ID, "line_id": LINE_ID, "station_id": station_id,
+                    "machine_id": machine_id, "ts": fmt(ts)}
             if inj["type"] == "event":
-                payload = {"station_id": station, "ts": fmt(ts), "type": inj["event"],
-                           "details": inj.get("details", {})}
-                messages.append((ts, f"plant/line1/{station}/event", payload))
+                payload = {**base, "type": inj["event"], "details": inj.get("details", {})}
+                messages.append((ts, topic_for(machine_id, "event"), payload))
             elif inj["type"] == "alarm":
-                payload = {"station_id": station, "ts": fmt(ts), "code": inj["code"],
-                           "severity": inj.get("severity", "warning")}
-                messages.append((ts, f"plant/line1/{station}/alarm", payload))
+                payload = {**base, "code": inj["code"], "severity": inj.get("severity", "warning")}
+                messages.append((ts, topic_for(machine_id, "alarm"), payload))
 
     messages.sort(key=lambda m: m[0])   # stable sort
     return messages
@@ -116,6 +134,7 @@ def main() -> None:
     parser.add_argument("--vehicles", type=int, default=None)
     parser.add_argument("--speed", type=float, default=60.0)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args()
 
     scenario = load_scenario(args.scenario)
@@ -135,9 +154,10 @@ def main() -> None:
             time.sleep(gap_s / args.speed)
         prev_ts = ts
         last_info = client.publish(topic, json.dumps(payload), qos=1)
-        print(payload["ts"], topic.split("/", 2)[2], payload.get("vin", ""),
-              payload.get("measured", payload.get("code", payload.get("type"))),
-              payload.get("result", ""))
+        if not args.quiet:
+            print(payload["ts"], topic.split("/", 2)[2], payload.get("vin", ""),
+                  payload.get("measured", payload.get("code", payload.get("type"))),
+                  payload.get("result", ""))
 
     if last_info is not None:
         last_info.wait_for_publish()

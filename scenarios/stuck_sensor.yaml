@@ -1,6 +1,7 @@
 id: stuck_sensor
-description: Humidity sensor repeats exactly 55.0. This is a false reading, not a real fault.
+description: Humidity sensor M-0201 repeats exactly 55.0. False reading, not a process fault.
 station: ST-020
+machine: M-0201
 duration_min: 45
 
 inject:
@@ -15,4 +16,5 @@ ground_truth:
   should_raise_incident: false
   root_cause: sensor_stuck_false_reading
   affected_station: ST-020
+  affected_machine: M-0201
   affected_window_min: null

@@ -1,6 +1,7 @@
 id: torque_drift
-description: Torque slowly drifts low at the bolting station after a tool change.
+description: Torque slowly drifts low on machine M-0403 after a tool change. Other machines stay normal.
 station: ST-040
+machine: M-0403
 duration_min: 45
 
 inject:
@@ -9,6 +10,7 @@ inject:
     event: tool_change
     details:
       tool_id: NUT-RUNNER-07
+      previous_tool_id: NUT-RUNNER-03
       operator: T-114
   - at_min: 12
     type: signal
@@ -16,17 +18,18 @@ inject:
     pattern: linear_drift
     from_value: 45.0
     to_value: 38.5
-    until_min: 30
+    until_min: 31
   - at_min: 26
     type: alarm
     code: TORQUE_LOW
     severity: warning
   - at_min: 31
     type: event
-    event: line_stop
+    event: machine_stop
 
 ground_truth:
   should_raise_incident: true
   root_cause: tool_change_misconfiguration
   affected_station: ST-040
+  affected_machine: M-0403
   affected_window_min: [12, 31]
