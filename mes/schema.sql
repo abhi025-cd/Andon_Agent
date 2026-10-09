@@ -88,3 +88,12 @@ ALTER TABLE incidents ADD COLUMN IF NOT EXISTS containment JSONB;
 
 ALTER TABLE incidents ADD COLUMN IF NOT EXISTS report TEXT;
 ALTER TABLE incidents ADD COLUMN IF NOT EXISTS report_review JSONB;
+
+CREATE TABLE IF NOT EXISTS approvals (
+    id          BIGSERIAL PRIMARY KEY,
+    incident_id BIGINT REFERENCES incidents(id),
+    action      TEXT NOT NULL,
+    decision    TEXT NOT NULL,
+    decided_by  TEXT,
+    ts          TIMESTAMPTZ NOT NULL DEFAULT now()
+);

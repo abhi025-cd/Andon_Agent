@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_groq import ChatGroq
 
-from agents.analyst import ROOT_CAUSES
+from agents.constants import ROOT_CAUSES
 from agents.mes_tools import (Clock, check_spc_tool, query_alarms_tool,
                               query_downtime_tool, query_tool_changes_tool)
 from agents.tools import _connect
