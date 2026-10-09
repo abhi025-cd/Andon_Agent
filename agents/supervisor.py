@@ -1,5 +1,5 @@
 """Supervisor: a LangGraph state machine that routes the agents and pauses for human approval.
-monitor -> diagnose -> traceability -> report -> approval (interrupt) -> END"""
+monitor -> diagnose -> traceability -> approval (interrupt) -> report -> END"""
 import json
 from typing import TypedDict
 
@@ -19,6 +19,7 @@ class State(TypedDict, total=False):
     incident_id: int | None
     proposal: dict
     decision: str
+    report_path: str
     note: str
 
 
@@ -37,7 +38,7 @@ def diagnose_node(state: State) -> dict:
     try:
         r = diagnose(state["incident_id"])
     except Exception as exc:                       # graceful fallback: a human takes over
-        return {"note": f"diagnosis failed: {type(exc).__name__}"}
+        return {"note": f"diagnosis failed: {type(exc).__name__}: {str(exc)[:300]}"}
     if not r["diagnosis"]:
         return {"note": "diagnosis could not be parsed"}
     return {}
@@ -47,18 +48,14 @@ def traceability_node(state: State) -> dict:
     return {"proposal": propose_containment(state["incident_id"])}
 
 
-def report_node(state: State) -> dict:
-    write_report(state["incident_id"])
-    return {}
-
-
 def approval_node(state: State) -> dict:
     # interrupt() pauses the graph. On resume this node re-runs from the top,
     # so everything BEFORE interrupt() must be free of side effects.
     p = state["proposal"]
     answer = interrupt({
         "incident_id": state["incident_id"],
-        "question": f"Hold {p['n_vins']} VINs and stop {p['station_id']}?",
+        "question": f"Hold {p['n_vins']} VINs and stop machine {p['machine_id']}?",
+        "machine_id": p["machine_id"], "station_id": p["station_id"],
         "n_nok": p["n_nok"], "window": [p["window_start"], p["window_end"]],
     })
     decision = "approved" if answer.get("approved") else "rejected"
@@ -80,6 +77,14 @@ def approval_node(state: State) -> dict:
     return {"decision": decision}
 
 
+def report_node(state: State) -> dict:
+    try:
+        rep = write_report(state["incident_id"])
+        return {"report_path": rep["path"]}
+    except Exception as exc:            # a failed report must not undo the human decision
+        return {"note": f"report failed: {type(exc).__name__}: {str(exc)[:300]}"}
+
+
 def after_monitor(state: State) -> str:
     return "diagnose" if state.get("incident_id") else END
 
@@ -93,12 +98,12 @@ def build_graph():
     g.add_node("monitor", monitor_node)
     g.add_node("diagnose", diagnose_node)
     g.add_node("traceability", traceability_node)
-    g.add_node("report", report_node)
     g.add_node("approval", approval_node)
+    g.add_node("report", report_node)
     g.add_edge(START, "monitor")
     g.add_conditional_edges("monitor", after_monitor, {"diagnose": "diagnose", END: END})
     g.add_conditional_edges("diagnose", after_diagnose, {"traceability": "traceability", END: END})
-    g.add_edge("traceability", "report")
-    g.add_edge("report", "approval")
-    g.add_edge("approval", END)
+    g.add_edge("traceability", "approval")
+    g.add_edge("approval", "report")
+    g.add_edge("report", END)
     return g.compile(checkpointer=MemorySaver())

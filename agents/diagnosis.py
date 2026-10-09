@@ -1,5 +1,5 @@
-"""Diagnosis agent (ReAct): the LLM chooses which tools to call to find the root cause.
-Step 1 gathers evidence with tools and writes a plain-text conclusion.
+"""Diagnosis agent (ReAct): the LLM chooses which tools to call to find the root cause of
+an incident on ONE machine. Step 1 gathers evidence with tools and writes plain text.
 Step 2 (no tools) converts that conclusion to JSON."""
 import json
 import os
@@ -13,7 +13,7 @@ from langchain_groq import ChatGroq
 from agents.constants import ROOT_CAUSES
 from agents.mes_tools import (Clock, check_spc_tool, query_alarms_tool,
                               query_downtime_tool, query_tool_changes_tool)
-from agents.tools import _connect
+from agents.tools import _connect, _query
 from agents.util import invoke_with_retries, is_transient, parse_json_object, text_of
 
 load_dotenv()
@@ -21,11 +21,13 @@ load_dotenv()
 DIAG_TOOLS = [check_spc_tool, query_tool_changes_tool, query_downtime_tool, query_alarms_tool]
 
 SYSTEM_PROMPT = f"""You are a root-cause analyst for an automotive assembly line.
-You are given one incident: a station and signal that the monitor flagged as drifting.
+You are given one incident: a machine and signal that the monitor flagged as drifting.
 
 Rules:
 - Gather evidence with the tools before concluding. Never claim anything a tool result does not support.
-- Look for events shortly BEFORE the drift began: tool changes, alarms, downtime.
+- Look for events shortly BEFORE the drift began on that machine: tool changes, alarms, downtime.
+- You may run check_spc_tool on the sibling machines at the same station to see whether the
+  problem is specific to this machine. Only call a cause machine-specific if siblings look normal.
 - Say "unknown" if the evidence does not point to a cause. Do not guess.
 - Allowed root causes: {", ".join(ROOT_CAUSES)}.
 
@@ -52,12 +54,16 @@ def _load(incident_id: int) -> dict:
     conn = _connect()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT station_id, signal, detected_at, evidence FROM incidents "
-                        "WHERE id = %s", (incident_id,))
-            s, sig, det, ev = cur.fetchone()
+            cur.execute("SELECT station_id, machine_id, signal, detected_at, evidence "
+                        "FROM incidents WHERE id = %s", (incident_id,))
+            station, machine, signal, det, ev = cur.fetchone()
     finally:
         conn.close()
-    return {"station_id": s, "signal": sig, "detected_at": _iso(det), "evidence": ev}
+    siblings = [r["machine_id"] for r in _query(
+        "SELECT machine_id FROM machines WHERE station_id = %s AND machine_id <> %s "
+        "ORDER BY machine_id", (station, machine))]
+    return {"station_id": station, "machine_id": machine, "signal": signal,
+            "detected_at": _iso(det), "evidence": ev, "siblings": siblings}
 
 
 def _format_json(conclusion: str, retries: int = 3) -> dict | None:
@@ -104,9 +110,11 @@ def diagnose(incident_id: int) -> dict:
     Clock.now = inc["detected_at"]               # the agent cannot read past this time
     llm = ChatGroq(model=os.environ["GROQ_MODEL"], temperature=0)
     agent = create_agent(llm, tools=DIAG_TOOLS, system_prompt=SYSTEM_PROMPT)
-    prompt = (f"Incident {incident_id}: {inc['station_id']} signal {inc['signal']} was flagged "
-              f"as drifting at {inc['detected_at']}. Monitor evidence: "
-              f"{json.dumps(inc['evidence'])}. Find the most likely root cause.")
+    prompt = (f"Incident {incident_id}: machine {inc['machine_id']} (station {inc['station_id']}) "
+              f"signal {inc['signal']} was flagged as drifting at {inc['detected_at']}. "
+              f"Sibling machines at this station: {', '.join(inc['siblings']) or 'none'}. "
+              f"Monitor evidence: {json.dumps(inc['evidence'])}. "
+              f"Find the most likely root cause.")
     try:
         result, retries = invoke_with_retries(agent, prompt)       # step 1: tools on
     finally:

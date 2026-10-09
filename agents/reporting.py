@@ -11,7 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dotenv import load_dotenv  # noqa: E402
 from langchain_groq import ChatGroq  # noqa: E402
 
-from agents.tools import _connect, _query, query_alarms, query_downtime, query_tool_changes  # noqa: E402
+from agents.tools import (_connect, _query, query_alarms, query_downtime,  # noqa: E402
+                          query_tool_changes)
 from agents.util import is_transient, parse_json_object, text_of  # noqa: E402
 
 load_dotenv()
@@ -31,22 +32,25 @@ def _llm(prompt: str, retries: int = 4) -> str:
 
 
 def build_facts(incident_id: int) -> dict:
-    inc = _query("SELECT id, station_id, signal, detected_at, root_cause, diagnosis, "
-                 "containment, evidence FROM incidents WHERE id = %s", (incident_id,))[0]
+    inc = _query("SELECT id, station_id, machine_id, signal, detected_at, root_cause, "
+                 "diagnosis, containment, evidence FROM incidents WHERE id = %s",
+                 (incident_id,))[0]
     if not inc["diagnosis"]:
         raise ValueError(f"incident {incident_id} has no diagnosis yet")
-    s, det = inc["station_id"], inc["detected_at"]
+    m, det = inc["machine_id"], inc["detected_at"]
     c = inc["containment"] or {}
     return {
-        "incident_id": inc["id"], "station_id": s, "signal": inc["signal"],
-        "detected_at": det, "monitor_evidence": inc["evidence"],
+        "incident_id": inc["id"], "station_id": inc["station_id"], "machine_id": m,
+        "signal": inc["signal"], "detected_at": det, "monitor_evidence": inc["evidence"],
         "diagnosis": inc["diagnosis"],
-        "tool_changes": query_tool_changes(s, det, 120),
-        "alarms": query_alarms(s, det, 120),
-        "downtime": query_downtime(s, det, 120),
+        "tool_changes": query_tool_changes(m, det, 120),
+        "alarms": query_alarms(m, det, 120),
+        "downtime": query_downtime(m, det, 120),
         "containment_proposal": {k: c.get(k) for k in
                                  ("window_start", "window_end", "window_basis", "n_vins",
-                                  "n_nok", "actions")},
+                                  "n_nok", "nok_vins", "vins_to_hold", "actions")},
+        "human_decision": _query("SELECT action, decision, decided_by, ts FROM approvals "
+                                 "WHERE incident_id = %s ORDER BY id", (incident_id,)),
         "audit_log": [{"agent": a["agent"], "tool": a["tool"], "ts": a["ts"]}
                       for a in _query("SELECT agent, tool, ts FROM agent_actions "
                                       "WHERE incident_id = %s ORDER BY id", (incident_id,))],
@@ -57,10 +61,13 @@ DRAFT_PROMPT = """Write an 8D problem-solving report in Markdown for an automoti
 
 STRICT RULES:
 - Use ONLY the facts in FACTS. Do not invent names, times, numbers, part numbers or causes.
-- D1 (team) and D6, D7, D8 (verification, prevention, closure) cannot be known: write
-  "Pending - requires human input" for each.
-- D3 containment is a PROPOSAL awaiting human approval. Do not say it was executed.
+- D1 (team) and D5 to D8 (corrective action, validation, prevention, closure) cannot be known:
+  write "Pending - requires human input" for each.
+- D3 containment: state the proposal and the human decision exactly as given in
+  human_decision. There is no system that physically executes holds or stops, so never say
+  vehicles were held or the machine was stopped. Say "approved" or "rejected" only as recorded.
 - D4 must state the root cause with its evidence and confidence exactly as given.
+- Mention the machine (machine_id) and station.
 - Keep every section short. Sections: D1 to D8 with those headings.
 
 FACTS:
@@ -69,8 +76,9 @@ FACTS:
 
 CRITIQUE_PROMPT = """You are a strict reviewer. Compare the REPORT with the FACTS.
 List every statement in the report that is NOT supported by the facts (invented detail,
-wrong number, containment described as done, overstated certainty), and every required item
-that is missing (root cause, evidence, containment proposal, pending sections).
+wrong number, containment described as physically executed, overstated certainty), and every
+required item that is missing (root cause, evidence, containment proposal, human decision,
+pending sections).
 Reply with ONLY one JSON object:
 {{"verdict": "pass" or "revise", "issues": ["short description", ...]}}
 
@@ -118,7 +126,8 @@ def write_report(incident_id: int) -> dict:
             cur.execute("INSERT INTO agent_actions (incident_id, agent, tool, args, result) "
                         "VALUES (%s, 'reporting', 'write_8d_report', %s, %s)",
                         (incident_id, json.dumps({"incident_id": incident_id}),
-                         json.dumps({"verdict": review["verdict"], "n_issues": len(review["issues"])})))
+                         json.dumps({"verdict": review["verdict"],
+                                     "n_issues": len(review["issues"])})))
     finally:
         conn.close()
     return {"path": str(path), "review": review, "draft_changed": final != draft}
